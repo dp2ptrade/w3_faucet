@@ -52,6 +52,13 @@ export async function GET() {
         amount: '5',
         decimals: 18,
       },
+      W3E: {
+        address: '0x864e9B954247a260a9e912095cF2D0bfC99BFE27',
+        symbol: 'W3E',
+        name: 'W3 Energy Token',
+        amount: '100',
+        decimals: 18,
+      },
     };
 
     return NextResponse.json({

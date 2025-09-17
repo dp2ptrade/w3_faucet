@@ -22,7 +22,26 @@ import {
   Moon,
   Menu,
   X,
-  LucideProps
+  LucideProps,
+  BookOpen,
+  FileText,
+  MessageCircle,
+  Mail,
+  Rocket,
+  Code,
+  TestTube,
+  UserPlus,
+  Lightbulb,
+  Building,
+  Eye,
+  PenTool,
+  Send,
+  ArrowRight,
+  ArrowLeft,
+  Star,
+  Heart,
+  Shield,
+  Layers
 } from 'lucide-react';
 
 // Export all icons
@@ -47,7 +66,26 @@ export {
   Sun,
   Moon,
   Menu,
-  X
+  X,
+  BookOpen,
+  FileText,
+  MessageCircle,
+  Mail,
+  Rocket,
+  Code,
+  TestTube,
+  UserPlus,
+  Lightbulb,
+  Building,
+  Eye,
+  PenTool,
+  Send,
+  ArrowRight,
+  ArrowLeft,
+  Star,
+  Heart,
+  Shield,
+  Layers
 };
 
 // ClientIcon component for dynamic icon rendering

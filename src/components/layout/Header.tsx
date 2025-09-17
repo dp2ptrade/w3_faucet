@@ -43,7 +43,7 @@ export function Header() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-8">
-            <a href="#faucet" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+            <a href="/" className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
               Faucet
             </a>
             <a 
@@ -109,7 +109,7 @@ export function Header() {
           <div className="md:hidden py-4 border-t border-gray-200 dark:border-gray-700">
             <nav className="flex flex-col space-y-4">
               <a 
-                href="#faucet" 
+                href="/" 
                 className="text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 onClick={() => setIsMenuOpen(false)}
               >

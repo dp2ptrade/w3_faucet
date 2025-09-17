@@ -8,7 +8,8 @@ export const CONTRACTS = {
     DAI: '0xb748db3348b98E6c2A2dE268ed25b73f78490D25',
     WETH: '0x395Eb6F0cAf9Df14a245A30e5fd685A1a13548c7',
     LINK: '0x02632700270A2c8419BCcAcE8196b7738F80c602',
-    UNI: '0x4c55c5a8D00079d678996431b8CD01B0b3aD2b0E'
+    UNI: '0x4c55c5a8D00079d678996431b8CD01B0b3aD2b0E',
+    W3E: process.env.NEXT_PUBLIC_W3E_TOKEN_ADDRESS || '0x864e9B954247a260a9e912095cF2D0bfC99BFE27'
   }
 };
 
@@ -65,6 +66,12 @@ export const TOKEN_METADATA = {
     name: 'Uniswap',
     decimals: 18,
     amount: '10'
+  },
+  W3E: {
+    symbol: 'W3E',
+    name: 'W3 Energy Token',
+    decimals: 18,
+    amount: '100'
   }
 };
 
@@ -195,6 +202,35 @@ export const FAUCET_ABI = [
         "internalType": "bool",
         "name": "active",
         "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      }
+    ],
+    "name": "checkW3EBalance",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "hasMinBalance",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "currentBalance",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "requiredBalance",
+        "type": "uint256"
       }
     ],
     "stateMutability": "view",

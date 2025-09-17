@@ -8,6 +8,7 @@ import { Coins, Clock, Zap, AlertCircle, CheckCircle, RefreshCw } from '../ui/Cl
 import { useFaucetBalances } from '../../hooks/useFaucetBalances';
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { useRecentClaims } from '@/contexts/RecentClaimsContext';
+import { useW3EBalance } from '../../hooks/useW3EBalance';
 
 interface Token {
   address: string;
@@ -34,6 +35,7 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
   const { balances, isLoading: balancesLoading, refreshBalances } = useFaucetBalances();
   const { isAuthenticated, token, isAuthenticating, error: authError, authenticate, clearError } = useUserAuth();
   const { addClaim } = useRecentClaims();
+  const { hasMinBalance, currentBalance, requiredBalance, isLoading: w3eLoading, error: w3eError } = useW3EBalance();
 
   // Ensure consistent rendering between server and client
   useEffect(() => {
@@ -442,6 +444,60 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
         </div>
       )}
 
+      {/* W3E Token Balance Requirement */}
+      {isConnected && (
+        <div className={`mb-6 p-4 border rounded-xl ${
+          hasMinBalance 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              {hasMinBalance ? (
+                <>
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                  <p className="text-green-800 dark:text-green-200">
+                    W3E Token Requirement Met
+                  </p>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  <p className="text-red-800 dark:text-red-200">
+                    W3E Token Requirement Not Met
+                  </p>
+                </>
+              )}
+            </div>
+            {w3eLoading && (
+              <div className="flex items-center space-x-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                <span className="text-sm text-blue-600 dark:text-blue-400">Checking...</span>
+              </div>
+            )}
+          </div>
+          <div className="mt-2 text-sm">
+            {w3eError ? (
+              <p className="text-red-600 dark:text-red-400">{w3eError}</p>
+            ) : (
+              <div className="space-y-1">
+                <p className="text-gray-600 dark:text-gray-400">
+                  Current Balance: {parseFloat(currentBalance) / Math.pow(10, 18)} W3E
+                </p>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Required: {parseFloat(requiredBalance) / Math.pow(10, 18)} W3E
+                </p>
+                {!hasMinBalance && (
+                  <p className="text-red-600 dark:text-red-400 font-medium">
+                    You need at least {parseFloat(requiredBalance) / Math.pow(10, 18)} W3E tokens to use this faucet.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Cooldown Timer */}
       {cooldownTime > 0 && (
         <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl">
@@ -459,9 +515,9 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
       {/* Claim Button */}
       <button
         onClick={handleClaim}
-        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0}
+        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance}
         className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-200 ${
-          !isClient || !isConnected || isClaiming || cooldownTime > 0
+          !isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance
             ? 'bg-gray-400 cursor-not-allowed'
             : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-[1.02] active:scale-[0.98]'
         }`}
@@ -475,6 +531,8 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
           `Wait ${formatTime(cooldownTime)}`
         ) : !isClient || !isConnected ? (
           'Connect Wallet'
+        ) : !hasMinBalance ? (
+          'Need W3E Tokens'
         ) : (
           `Claim ${tokens[selectedToken]?.amount || '0'} ${selectedToken}`
         )}
