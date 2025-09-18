@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 import { verifyToken } from '@/lib/auth';
 import { blockchainService } from '@/lib/blockchain';
+import { getTransactionQueue } from '@/lib/queue';
 
 // Rate limiting storage (in production, use Redis)
 const dailyClaims = new Map<string, { count: number; lastClaim: number }>();
@@ -9,7 +10,7 @@ const dailyClaims = new Map<string, { count: number; lastClaim: number }>();
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { address, tokenAddress } = body;
+    const { address, tokenAddress, useQueue = true } = body; // Queue enabled by default
     
     // Get authorization header
     const authHeader = request.headers.get('authorization');
@@ -76,6 +77,73 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Check if queue processing is enabled
+    if (useQueue) {
+      try {
+        // Validate token address for token claims
+        if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
+          if (!ethers.isAddress(tokenAddress)) {
+            return NextResponse.json(
+              {
+                error: 'Invalid Token Address',
+                message: 'Please provide a valid token address',
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        // Determine job type and priority
+        const jobType = (!tokenAddress || tokenAddress === '0x0000000000000000000000000000000000000000') 
+          ? 'ETH_CLAIM' 
+          : 'TOKEN_CLAIM';
+        
+        // Higher priority for ETH claims (lower number = higher priority)
+        const priority = jobType === 'ETH_CLAIM' ? 1 : 2;
+
+        // Get queue instance
+        const queue = getTransactionQueue();
+        
+        // Add job to queue
+        const jobId = queue.addJob({
+          type: jobType,
+          data: {
+            address,
+            tokenAddress: tokenAddress || undefined,
+            timestamp: Date.now(),
+            userAgent: request.headers.get('user-agent') || undefined,
+          },
+          priority,
+          maxAttempts: 3,
+        });
+
+        // Update daily claim count
+        dailyClaims.set(claimKey, {
+          count: (claimData?.count || 0) + 1,
+          lastClaim: Date.now(),
+        });
+
+        console.log(`Claim queued for ${address}: Job ID ${jobId}`);
+
+        // Get job details for response
+        const job = queue.getJob(jobId);
+        
+        return NextResponse.json({
+          success: true,
+          jobId,
+          message: 'Claim request queued successfully',
+          position: job?.position || 0,
+          estimatedTime: job?.estimatedProcessingTime || 0,
+          status: 'queued',
+        });
+
+      } catch (error: any) {
+        console.error('Queue processing failed, falling back to direct processing:', error);
+        // Fall through to direct processing
+      }
+    }
+
+    // Direct processing (fallback or when queue is disabled)
     let transactionHash: string;
     
     try {
@@ -103,12 +171,13 @@ export async function POST(request: NextRequest) {
         lastClaim: Date.now(),
       });
       
-      console.log(`Claim successful for ${address}: ${transactionHash}`);
+      console.log(`Direct claim successful for ${address}: ${transactionHash}`);
       
       return NextResponse.json({
         success: true,
         transactionHash,
         message: 'Tokens claimed successfully',
+        status: 'completed',
       });
       
     } catch (error: any) {

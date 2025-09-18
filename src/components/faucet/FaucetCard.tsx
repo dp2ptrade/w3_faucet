@@ -30,6 +30,11 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
   const [isClaiming, setIsClaiming] = useState(false);
   const [cooldownTime, setCooldownTime] = useState(0);
   const [actualCooldownPeriod, setActualCooldownPeriod] = useState(1 * 60); // Default to 1 minute, will be updated from API
+  // Queue-related state
+  const [queueJobId, setQueueJobId] = useState<string | null>(null);
+  const [queueStatus, setQueueStatus] = useState<'pending' | 'processing' | 'completed' | 'failed' | 'retrying' | null>(null);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   // Removed PoW-related state variables
   const [isClient, setIsClient] = useState(false);
   const { balances, isLoading: balancesLoading, refreshBalances } = useFaucetBalances();
@@ -41,6 +46,102 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Poll queue status when we have a job ID
+  useEffect(() => {
+    if (!queueJobId || queueStatus === 'completed' || queueStatus === 'failed') {
+      return;
+    }
+
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/api/queue/status/${queueJobId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setQueueStatus(data.status);
+          setQueuePosition(data.position);
+          setEstimatedTime(data.estimatedTime);
+
+          if (data.status === 'completed') {
+            // Handle successful completion
+            if (data.transactionHash) {
+              const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
+              const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
+              const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
+              
+              addClaim({
+                txHash: data.transactionHash,
+                blockNumber: data.blockNumber || 0,
+                token: tokenSymbol,
+                tokenAddress: tokenAddress || '',
+                amount: amount,
+                formattedAmount: `${amount} ${tokenSymbol}`,
+                userAddress: address || '',
+              });
+
+              toast.success(
+                <div className="flex items-center space-x-2">
+                  <CheckCircle className="w-5 h-5 text-green-500" />
+                  <div>
+                    <p className="font-medium">Claim Completed!</p>
+                    <p className="text-sm text-gray-600">
+                      {tokenSymbol} tokens sent to your wallet
+                    </p>
+                    <p className="text-xs text-gray-500 font-mono">
+                      TX: {data.transactionHash.slice(0, 10)}...
+                    </p>
+                  </div>
+                </div>,
+                { duration: 5000 }
+              );
+            }
+            
+            // Clear queue state and set cooldown
+            setQueueJobId(null);
+            setQueueStatus(null);
+            setQueuePosition(null);
+            setEstimatedTime(null);
+            setCooldownTime(actualCooldownPeriod);
+          } else if (data.status === 'failed') {
+            const errorMessage = data.error || 'Transaction failed';
+            
+            // Check if error is due to cooldown and extract time
+            const cooldownMatch = errorMessage.match(/Try again in (\d+) minutes/);
+            if (cooldownMatch) {
+              const cooldownMinutes = parseInt(cooldownMatch[1]);
+              const cooldownSeconds = cooldownMinutes * 60;
+              setCooldownTime(cooldownSeconds);
+              
+              toast.error(
+                <div className="flex items-center space-x-2">
+                  <Clock className="w-5 h-5 text-orange-500" />
+                  <div>
+                    <p className="font-medium">Cooldown Active</p>
+                    <p className="text-sm text-gray-600">
+                      Please wait {cooldownMinutes} minutes before claiming again
+                    </p>
+                  </div>
+                </div>,
+                { duration: 5000 }
+              );
+            } else {
+              toast.error(errorMessage);
+            }
+            
+            setQueueJobId(null);
+            setQueueStatus(null);
+            setQueuePosition(null);
+            setEstimatedTime(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error polling queue status:', error);
+      }
+    };
+
+    const interval = setInterval(pollStatus, 2000); // Poll every 2 seconds
+    return () => clearInterval(interval);
+  }, [queueJobId, queueStatus, selectedToken, tokens, address, addClaim, actualCooldownPeriod]);
 
   // Fetch actual cooldown period from API
   useEffect(() => {
@@ -160,43 +261,71 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
       const result = await response.json();
 
       if (response.ok) {
-        const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
-        const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
-        const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
-        
-        // Add claim to in-memory storage for instant display
-        if (address && result.transactionHash) {
-          addClaim({
-            txHash: result.transactionHash,
-            blockNumber: result.blockNumber || 0, // Will be updated when available
-            token: tokenSymbol,
-            tokenAddress: tokenAddress || '',
-            amount: amount,
-            formattedAmount: `${amount} ${tokenSymbol}`,
-            userAddress: address,
-          });
-        }
-        
-        toast.success(
-          <div className="flex items-center space-x-2">
-            <CheckCircle className="w-5 h-5 text-green-500" />
-            <div>
-              <p className="font-medium">Claim Successful!</p>
-              <p className="text-sm text-gray-600">
-                {tokenSymbol} tokens sent to your wallet
-              </p>
-              {result.transactionHash && (
-                <p className="text-xs text-gray-500 font-mono">
-                  TX: {result.transactionHash.slice(0, 10)}...
+        // Check if this is a queue response or direct transaction response
+        if (result.jobId) {
+          // Queue response - set up queue tracking
+          setQueueJobId(result.jobId);
+          setQueueStatus(result.status);
+          setQueuePosition(result.position);
+          setEstimatedTime(result.estimatedTime);
+          
+          toast.success(
+            <div className="flex items-center space-x-2">
+              <Clock className="w-5 h-5 text-blue-500" />
+              <div>
+                <p className="font-medium">Claim Queued!</p>
+                <p className="text-sm text-gray-600">
+                  Position #{result.position} in queue
                 </p>
-              )}
-            </div>
-          </div>,
-          { duration: 5000 }
-        );
-        
-        // Set cooldown using actual period
-        setCooldownTime(actualCooldownPeriod);
+                {result.estimatedTime && (
+                  <p className="text-xs text-gray-500">
+                    Est. time: {Math.ceil(result.estimatedTime / 1000)}s
+                  </p>
+                )}
+              </div>
+            </div>,
+            { duration: 4000 }
+          );
+        } else {
+          // Direct transaction response (fallback mode)
+          const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
+          const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
+          const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
+          
+          // Add claim to in-memory storage for instant display
+          if (address && result.transactionHash) {
+            addClaim({
+              txHash: result.transactionHash,
+              blockNumber: result.blockNumber || 0, // Will be updated when available
+              token: tokenSymbol,
+              tokenAddress: tokenAddress || '',
+              amount: amount,
+              formattedAmount: `${amount} ${tokenSymbol}`,
+              userAddress: address,
+            });
+          }
+          
+          toast.success(
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="w-5 h-5 text-green-500" />
+              <div>
+                <p className="font-medium">Claim Successful!</p>
+                <p className="text-sm text-gray-600">
+                  {tokenSymbol} tokens sent to your wallet
+                </p>
+                {result.transactionHash && (
+                  <p className="text-xs text-gray-500 font-mono">
+                    TX: {result.transactionHash.slice(0, 10)}...
+                  </p>
+                )}
+              </div>
+            </div>,
+            { duration: 5000 }
+          );
+          
+          // Set cooldown using actual period
+          setCooldownTime(actualCooldownPeriod);
+        }
       } else {
         if (result.retryAfter) {
           setCooldownTime(result.retryAfter);
@@ -498,6 +627,62 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
         </div>
       )}
 
+      {/* Queue Status */}
+      {queueJobId && queueStatus && (
+        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+               {queueStatus === 'pending' && <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
+               {queueStatus === 'processing' && <RefreshCw className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />}
+               {queueStatus === 'retrying' && <AlertCircle className="w-5 h-5 text-orange-600 dark:text-orange-400" />}
+               <div>
+                 <p className="text-blue-800 dark:text-blue-200 font-medium">
+                   {queueStatus === 'pending' && 'Transaction Queued'}
+                   {queueStatus === 'processing' && 'Processing Transaction'}
+                   {queueStatus === 'retrying' && 'Retrying Transaction'}
+                 </p>
+                {queuePosition !== null && queueStatus === 'pending' && (
+                  <p className="text-sm text-blue-600 dark:text-blue-300">
+                    Position #{queuePosition} in queue
+                  </p>
+                )}
+                {estimatedTime && queueStatus === 'pending' && (
+                  <p className="text-xs text-blue-500 dark:text-blue-400">
+                    Estimated time: {Math.ceil(estimatedTime / 1000)} seconds
+                  </p>
+                )}
+              </div>
+            </div>
+            {queueStatus === 'pending' && (
+              <button
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`/api/queue/cancel/${queueJobId}`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                      },
+                    });
+                    if (response.ok) {
+                      setQueueJobId(null);
+                      setQueueStatus(null);
+                      setQueuePosition(null);
+                      setEstimatedTime(null);
+                      toast.success('Transaction cancelled');
+                    }
+                  } catch (error) {
+                    toast.error('Failed to cancel transaction');
+                  }
+                }}
+                className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Cooldown Timer */}
       {cooldownTime > 0 && (
         <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl">
@@ -515,9 +700,9 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
       {/* Claim Button */}
       <button
         onClick={handleClaim}
-        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance}
+        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId}
         className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-200 ${
-          !isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance
+          !isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId
             ? 'bg-gray-400 cursor-not-allowed'
             : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-[1.02] active:scale-[0.98]'
         }`}
@@ -526,6 +711,21 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
           <div className="flex items-center justify-center space-x-2">
             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
             <span>Claiming...</span>
+          </div>
+        ) : queueJobId && queueStatus === 'pending' ? (
+          <div className="flex items-center justify-center space-x-2">
+            <Clock className="w-5 h-5" />
+            <span>Queued (#{queuePosition})</span>
+          </div>
+        ) : queueJobId && queueStatus === 'processing' ? (
+          <div className="flex items-center justify-center space-x-2">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            <span>Processing...</span>
+          </div>
+        ) : queueJobId && queueStatus === 'retrying' ? (
+          <div className="flex items-center justify-center space-x-2">
+            <AlertCircle className="w-5 h-5" />
+            <span>Retrying...</span>
           </div>
         ) : cooldownTime > 0 ? (
           `Wait ${formatTime(cooldownTime)}`
