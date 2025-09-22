@@ -5,7 +5,7 @@ import { verifyToken } from '@/lib/auth';
 export async function GET(request: NextRequest) {
   try {
     // Get query parameters
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = request.nextUrl;
     const userAddress = searchParams.get('address');
     const includeJobs = searchParams.get('includeJobs') === 'true';
     const isAdmin = searchParams.get('admin') === 'true';

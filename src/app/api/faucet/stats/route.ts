@@ -257,7 +257,7 @@ function parseClaimEvents(ethLogs: any[], tokenLogs: any[], includeRecentClaims:
 export async function GET(request: NextRequest) {
   try {
     // Get query parameters
-    const { searchParams } = new URL(request.url);
+    const { searchParams } = request.nextUrl;
     const userAddress = searchParams.get('address');
     const refresh = searchParams.get('refresh') === 'true';
     
