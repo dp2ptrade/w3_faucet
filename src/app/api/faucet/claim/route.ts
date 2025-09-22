@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { ethers } from 'ethers';
 import { verifyToken } from '@/lib/auth';
 import { blockchainService } from '@/lib/blockchain';
@@ -13,7 +14,8 @@ export async function POST(request: NextRequest) {
     const { address, tokenAddress, useQueue = true } = body; // Queue enabled by default
     
     // Get authorization header
-    const authHeader = request.headers.get('authorization');
+    const headersList = headers();
+    const authHeader = headersList.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         {
@@ -111,7 +113,7 @@ export async function POST(request: NextRequest) {
             address,
             tokenAddress: tokenAddress || undefined,
             timestamp: Date.now(),
-            userAgent: request.headers.get('user-agent') || undefined,
+            userAgent: headersList.get('user-agent') || undefined,
           },
           priority,
           maxAttempts: 3,

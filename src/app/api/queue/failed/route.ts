@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { transactionQueue, QueueJob } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
-    const authHeader = request.headers.get('authorization');
+    const headersList = headers();
+    const authHeader = headersList.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }
@@ -47,7 +49,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Verify admin authentication
-    const authHeader = request.headers.get('authorization');
+    const headersList = headers();
+    const authHeader = headersList.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Authorization required' }, { status: 401 });
     }

@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     // Get authorization header
-    const authHeader = request.headers.get('authorization');
+    const headersList = headers();
+    const authHeader = headersList.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         {

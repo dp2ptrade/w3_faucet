@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { transactionQueue } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
@@ -10,7 +11,8 @@ export async function POST(
     const { jobId } = params;
     
     // Get authorization header
-    const authHeader = request.headers.get('authorization');
+    const headersList = headers();
+    const authHeader = headersList.get('authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return NextResponse.json(
         {

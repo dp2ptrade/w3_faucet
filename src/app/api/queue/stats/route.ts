@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { transactionQueue, QueueJob } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get query parameters
-    const { searchParams } = request.nextUrl;
-    const userAddress = searchParams.get('address');
-    const includeJobs = searchParams.get('includeJobs') === 'true';
-    const isAdmin = searchParams.get('admin') === 'true';
+    // Get query parameters using URL constructor to avoid dynamic server usage
+    const url = new URL(request.url);
+    const userAddress = url.searchParams.get('address');
+    const includeJobs = url.searchParams.get('includeJobs') === 'true';
+    const isAdmin = url.searchParams.get('admin') === 'true';
     
     // For admin requests, verify authentication
     if (isAdmin) {
-      const authHeader = request.headers.get('authorization');
+      const headersList = headers();
+      const authHeader = headersList.get('authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return NextResponse.json(
           {

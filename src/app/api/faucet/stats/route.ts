@@ -256,10 +256,10 @@ function parseClaimEvents(ethLogs: any[], tokenLogs: any[], includeRecentClaims:
 
 export async function GET(request: NextRequest) {
   try {
-    // Get query parameters
-    const { searchParams } = request.nextUrl;
-    const userAddress = searchParams.get('address');
-    const refresh = searchParams.get('refresh') === 'true';
+    // Get query parameters using URL constructor to avoid dynamic server usage
+    const url = new URL(request.url);
+    const userAddress = url.searchParams.get('address');
+    const refresh = url.searchParams.get('refresh') === 'true';
     
     // Fetch actual blockchain events
     const { ethLogs, tokenLogs } = await getBlockchainEvents(userAddress || undefined, refresh);
