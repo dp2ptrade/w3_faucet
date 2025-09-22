@@ -5,11 +5,11 @@ import { verifyToken } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get query parameters using URL constructor to avoid dynamic server usage
-    const url = new URL(request.url);
-    const userAddress = url.searchParams.get('address');
-    const includeJobs = url.searchParams.get('includeJobs') === 'true';
-    const isAdmin = url.searchParams.get('admin') === 'true';
+    // Get query parameters from request.nextUrl.searchParams
+    const { searchParams } = request.nextUrl;
+    const userAddress = searchParams.get('address');
+    const includeJobs = searchParams.get('includeJobs') === 'true';
+    const isAdmin = searchParams.get('admin') === 'true';
     
     // For admin requests, verify authentication
     if (isAdmin) {
