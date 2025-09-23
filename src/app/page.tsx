@@ -6,7 +6,6 @@ import { Header } from '@/components/layout/Header';
 import FaucetCard from '@/components/faucet/FaucetCard';
 import TokenStats from '@/components/stats/TokenStats';
 import RecentClaimsCard from '@/components/RecentClaimsCard';
-import QueueStatusCard from '@/components/QueueStatusCard';
 import { CTACard } from '@/components/ui/CTACard';
 import { CommunityCard } from '@/components/ui/CommunityCard';
 import { 
@@ -107,19 +106,11 @@ export default function HomePage() {
           {/* Right Column - Stats (only when connected) */}
           {isConnected && (
             <div className="lg:col-span-1 space-y-8">
-              <QueueStatusCard userAddress={address} />
               <TokenStats userAddress={address} />
               <RecentClaimsCard userAddress={address} />
             </div>
           )}
         </div>
-
-        {/* Queue Status for non-connected users */}
-        {!isConnected && (
-          <div className="mt-12">
-            <QueueStatusCard />
-          </div>
-        )}
 
         {/* Features Section */}
         <div className="mt-16">

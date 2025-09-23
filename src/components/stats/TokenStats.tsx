@@ -334,7 +334,7 @@ export default function TokenStats({ className = '', userAddress }: TokenStatsPr
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [userAddress]);
 
-  // Periodic refresh every 2 minutes when user is active (less aggressive)
+  // Periodic refresh every 5 minutes when user is active (less aggressive)
   useEffect(() => {
     if (!userAddress) return;
 
@@ -342,7 +342,7 @@ export default function TokenStats({ className = '', userAddress }: TokenStatsPr
       if (!document.hidden) {
         fetchStats(false); // Don't force refresh, just update stats
       }
-    }, 120000); // 2 minutes instead of 30 seconds
+    }, 300000); // 5 minutes instead of 2 minutes for less frequent polling
 
     return () => clearInterval(interval);
   }, [userAddress]);

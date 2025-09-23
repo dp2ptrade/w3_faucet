@@ -5,7 +5,7 @@ import { useAccount, useBalance } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { toast } from 'react-hot-toast';
 import { Coins, Clock, Zap, AlertCircle, CheckCircle, RefreshCw } from '../ui/ClientIcon';
-import { useFaucetBalances } from '../../hooks/useFaucetBalances';
+
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { useRecentClaims } from '@/contexts/RecentClaimsContext';
 import { useW3EBalance } from '../../hooks/useW3EBalance';
@@ -37,7 +37,7 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
   // Removed PoW-related state variables
   const [isClient, setIsClient] = useState(false);
-  const { balances, isLoading: balancesLoading, refreshBalances } = useFaucetBalances();
+
   const { isAuthenticated, token, isAuthenticating, error: authError, authenticate, clearError } = useUserAuth();
   const { addClaim } = useRecentClaims();
   const { hasMinBalance, currentBalance, requiredBalance, isLoading: w3eLoading, error: w3eError } = useW3EBalance();
@@ -139,7 +139,12 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
       }
     };
 
-    const interval = setInterval(pollStatus, 2000); // Poll every 2 seconds
+    const interval = setInterval(() => {
+      // Only poll if page is visible to reduce unnecessary API calls
+      if (!document.hidden) {
+        pollStatus();
+      }
+    }, 5000); // Poll every 5 seconds instead of 2 seconds
     return () => clearInterval(interval);
   }, [queueJobId, queueStatus, selectedToken, tokens, address, addClaim, actualCooldownPeriod]);
 
@@ -381,23 +386,10 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
           Select Token
         </label>
-        <div className="flex items-center justify-between mb-3">
-          <span></span>
-          {isConnected && (
-            <button
-              onClick={refreshBalances}
-              disabled={balancesLoading}
-              className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors disabled:opacity-50"
-              title="Refresh faucet balances"
-            >
-              <RefreshCw className={`w-4 h-4 ${balancesLoading ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-        </div>
+
         {/* Mobile and Tablet List View */}
         <div className="block lg:hidden space-y-2">
           {Object.entries(tokens).map(([symbol, token]) => {
-            const balance = balances[symbol];
             return (
               <button
                 key={symbol}
@@ -421,22 +413,6 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
                     <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">
                       Claim: {token.amount} {symbol}
                     </div>
-                    {isConnected && (
-                      <div className="text-xs text-gray-500 dark:text-gray-500">
-                        {balance?.isLoading ? (
-                          <div className="flex items-center space-x-1">
-                            <div className="w-3 h-3 border border-gray-300 border-t-blue-500 rounded-full animate-spin flex-shrink-0"></div>
-                            <span>Loading...</span>
-                          </div>
-                        ) : balance?.error ? (
-                          <span className="text-red-500">Error loading</span>
-                        ) : balance ? (
-                          <span>Available: {balance.formattedBalance} {symbol}</span>
-                        ) : (
-                          <span>Available: 0 {symbol}</span>
-                        )}
-                      </div>
-                    )}
                   </div>
                 </div>
               </button>
@@ -447,7 +423,6 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
         {/* Desktop Grid View */}
         <div className="hidden lg:grid grid-cols-1 xl:grid-cols-3 gap-3">
           {Object.entries(tokens).map(([symbol, token]) => {
-            const balance = balances[symbol];
             return (
               <button
                 key={symbol}
@@ -470,22 +445,6 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
                   <div className="text-sm text-gray-600 dark:text-gray-400">
                     Claim: {token.amount} {symbol}
                   </div>
-                  {isConnected && (
-                    <div className="text-xs text-gray-500 dark:text-gray-500 border-t border-gray-200 dark:border-gray-600 pt-2">
-                      {balance?.isLoading ? (
-                        <div className="flex items-center space-x-1">
-                          <div className="w-3 h-3 border border-gray-300 border-t-blue-500 rounded-full animate-spin flex-shrink-0"></div>
-                          <span className="truncate">Loading...</span>
-                        </div>
-                      ) : balance?.error ? (
-                        <span className="text-red-500 truncate">Error loading</span>
-                      ) : balance ? (
-                        <span className="truncate">Available: {balance.formattedBalance} {symbol}</span>
-                      ) : (
-                        <span className="truncate">Available: 0 {symbol}</span>
-                      )}
-                    </div>
-                  )}
                 </div>
               </button>
             );
