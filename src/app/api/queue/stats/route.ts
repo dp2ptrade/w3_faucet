@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { transactionQueue, QueueJob } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     // Get query parameters from request.nextUrl.searchParams

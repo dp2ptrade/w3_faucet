@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ethers } from 'ethers';
 
+export const dynamic = "force-dynamic";
+
 // Cache for blockchain events to reduce API calls
 const eventCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_DURATION = 10 * 1000; // 10 seconds cache for faster updates

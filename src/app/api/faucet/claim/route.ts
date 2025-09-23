@@ -5,6 +5,8 @@ import { verifyToken } from '@/lib/auth';
 import { blockchainService } from '@/lib/blockchain';
 import { getTransactionQueue } from '@/lib/queue';
 
+export const dynamic = "force-dynamic";
+
 // Rate limiting storage (in production, use Redis)
 const dailyClaims = new Map<string, { count: number; lastClaim: number }>();
 

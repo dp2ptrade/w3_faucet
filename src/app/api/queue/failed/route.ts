@@ -3,6 +3,8 @@ import { headers } from 'next/headers';
 import { transactionQueue, QueueJob } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     // Verify admin authentication
