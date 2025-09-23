@@ -84,7 +84,7 @@ export class BlockchainService {
 
   async claimEth(recipientAddress: string): Promise<string> {
     try {
-      // Validate recipient address
+      // Validate address
       if (!ethers.isAddress(recipientAddress)) {
         throw new Error('Invalid recipient address');
       }
@@ -105,10 +105,8 @@ export class BlockchainService {
       const tx = await this.faucetContract.claimEthFor(recipientAddress);
       console.log(`🚀 ETH claim transaction sent: ${tx.hash}`);
       
-      // Wait for confirmation
-      const receipt = await tx.wait();
-      console.log(`✅ ETH claim confirmed in block: ${receipt.blockNumber}`);
-      
+      // Return transaction hash immediately - don't wait for confirmation
+      // The transaction will be confirmed in the background
       return tx.hash;
     } catch (error: unknown) {
       console.error('❌ ETH claim failed:', error);
@@ -148,10 +146,8 @@ export class BlockchainService {
       const tx = await this.faucetContract.claimTokenFor(tokenAddress, recipientAddress);
       console.log(`🚀 Token claim transaction sent: ${tx.hash}`);
       
-      // Wait for confirmation
-      const receipt = await tx.wait();
-      console.log(`✅ Token claim confirmed in block: ${receipt.blockNumber}`);
-      
+      // Return transaction hash immediately - don't wait for confirmation
+      // The transaction will be confirmed in the background
       return tx.hash;
     } catch (error: unknown) {
       console.error('❌ Token claim failed:', error);

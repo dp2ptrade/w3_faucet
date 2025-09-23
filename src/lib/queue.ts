@@ -266,9 +266,9 @@ export class TransactionQueue extends EventEmitter {
       // Validate job data before processing
       this.validateJobData(job);
 
-      // Add processing timeout
+      // Add processing timeout - reduced since we only wait for transaction submission
       const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Transaction timeout')), 60000); // 60 second timeout
+        setTimeout(() => reject(new Error('Transaction submission timeout - network may be congested')), 60000); // 60 second timeout
       });
 
       // Import blockchain service dynamically to avoid circular dependencies
@@ -358,6 +358,16 @@ export class TransactionQueue extends EventEmitter {
 
   private categorizeError(error: any): string {
     const message = error.message || error.toString();
+    
+    // Transaction timeout errors - more specific handling
+    if (message.includes('Transaction submission timeout - network may be congested')) {
+      return `Network congestion: Transaction submission took too long. Please try again.`;
+    }
+    
+    // Legacy timeout message (keeping for backward compatibility)
+    if (message.includes('Transaction timeout - blockchain confirmation took too long')) {
+      return `Transaction timeout: Blockchain confirmation took longer than expected. Your transaction may still succeed.`;
+    }
     
     // Network errors
     if (message.includes('network') || message.includes('connection') || message.includes('timeout')) {
