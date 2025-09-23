@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAccount, useBalance } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { toast } from 'react-hot-toast';
@@ -9,6 +9,8 @@ import { Coins, Clock, Zap, AlertCircle, CheckCircle, RefreshCw } from '../ui/Cl
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { useRecentClaims } from '@/contexts/RecentClaimsContext';
 import { useW3EBalance } from '../../hooks/useW3EBalance';
+import { useSmartQueuePolling } from '../../hooks/useSmartQueuePolling';
+import { useTransactionConfirmation } from '../../hooks/useTransactionConfirmation';
 
 interface Token {
   address: string;
@@ -35,6 +37,10 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
   const [queueStatus, setQueueStatus] = useState<'pending' | 'processing' | 'completed' | 'failed' | 'retrying' | null>(null);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [estimatedTime, setEstimatedTime] = useState<number | null>(null);
+  
+  // Transaction confirmation state
+  const [pendingTxHash, setPendingTxHash] = useState<string | null>(null);
+  const [isWaitingForConfirmation, setIsWaitingForConfirmation] = useState(false);
   // Removed PoW-related state variables
   const [isClient, setIsClient] = useState(false);
 
@@ -47,106 +53,148 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
     setIsClient(true);
   }, []);
 
-  // Poll queue status when we have a job ID
-  useEffect(() => {
-    if (!queueJobId || queueStatus === 'completed' || queueStatus === 'failed') {
-      return;
+  // Blockchain transaction confirmation hook
+  const { isLoading: isConfirming, isSuccess: isConfirmed, receipt, confirmations: currentConfirmations } = useTransactionConfirmation({
+    hash: pendingTxHash as `0x${string}`,
+    enabled: !!pendingTxHash && isWaitingForConfirmation,
+    confirmations: 1, // Wait for 1 confirmation
+    onSuccess: (receipt) => {
+      // Handle blockchain confirmation
+      const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
+      const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
+      const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
+      
+      addClaim({
+        txHash: receipt.transactionHash,
+        blockNumber: Number(receipt.blockNumber),
+        token: tokenSymbol,
+        tokenAddress: tokenAddress || '',
+        amount: amount,
+        formattedAmount: `${amount} ${tokenSymbol}`,
+        userAddress: address || '',
+      });
+
+      toast.success(
+        <div className="flex items-center space-x-2">
+          <CheckCircle className="w-5 h-5 text-green-500" />
+          <div>
+            <p className="font-medium">Claim Confirmed!</p>
+            <p className="text-sm text-gray-600">
+              {tokenSymbol} tokens confirmed on blockchain
+            </p>
+            <p className="text-xs text-gray-500 font-mono">
+              TX: {receipt.transactionHash.slice(0, 10)}...
+            </p>
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+
+      // Reset blockchain confirmation states
+      setPendingTxHash(null);
+      setIsWaitingForConfirmation(false);
+      setCooldownTime(actualCooldownPeriod);
+    },
+    onError: (error) => {
+      console.error('Transaction confirmation failed:', error);
+      toast.error('Transaction confirmation failed. Please check your wallet.');
+      setIsWaitingForConfirmation(false);
     }
+  });
 
-    const pollStatus = async () => {
-      try {
-        const response = await fetch(`/api/queue/status/${queueJobId}`);
-        if (response.ok) {
-          const data = await response.json();
-          setQueueStatus(data.status);
-          setQueuePosition(data.position);
-          setEstimatedTime(data.estimatedTime);
+  // Memoize the onCompleted callback to prevent polling restarts
+  const handleQueueCompleted = useCallback((data: any) => {
+    // Handle successful completion from queue
+    if (data.transactionHash) {
+      // Start blockchain confirmation instead of immediately showing success
+      setPendingTxHash(data.transactionHash);
+      setIsWaitingForConfirmation(true);
+        
+      toast.success(
+        <div className="flex items-center space-x-2">
+          <Clock className="w-5 h-5 text-blue-500" />
+          <div>
+            <p className="font-medium">Transaction Submitted!</p>
+            <p className="text-sm text-gray-600">
+              Waiting for blockchain confirmation...
+            </p>
+            <p className="text-xs text-gray-500 font-mono">
+              TX: {data.transactionHash.slice(0, 10)}...
+            </p>
+          </div>
+        </div>,
+        { duration: 4000 }
+      );
+        
+      // Clear all queue state immediately to stop polling
+      setQueueJobId(null);
+      setQueueStatus(null);
+      setQueuePosition(null);
+      setEstimatedTime(null);
+    } else {
+      // No transaction hash - handle as immediate completion
+      setCooldownTime(actualCooldownPeriod);
+        
+      // Clear queue state for non-transaction completions
+      setQueueJobId(null);
+      setQueueStatus('completed');
+      setQueuePosition(null);
+      setEstimatedTime(null);
+    }
+  }, [actualCooldownPeriod]);
 
-          if (data.status === 'completed') {
-            // Handle successful completion
-            if (data.transactionHash) {
-              const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
-              const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
-              const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
-              
-              addClaim({
-                txHash: data.transactionHash,
-                blockNumber: data.blockNumber || 0,
-                token: tokenSymbol,
-                tokenAddress: tokenAddress || '',
-                amount: amount,
-                formattedAmount: `${amount} ${tokenSymbol}`,
-                userAddress: address || '',
-              });
+  const handleQueueFailed = useCallback((data: any) => {
+    const errorMessage = data.error || 'Transaction failed';
+      
+    // Check if error is due to cooldown and extract time
+    const cooldownMatch = errorMessage.match(/Try again in (\d+) minutes/);
+    if (cooldownMatch) {
+      const cooldownMinutes = parseInt(cooldownMatch[1]);
+      const cooldownSeconds = cooldownMinutes * 60;
+      setCooldownTime(cooldownSeconds);
+        
+      toast.error(
+        <div className="flex items-center space-x-2">
+          <Clock className="w-5 h-5 text-orange-500" />
+          <div>
+            <p className="font-medium">Cooldown Active</p>
+            <p className="text-sm text-gray-600">
+              Please wait {cooldownMinutes} minutes before claiming again
+            </p>
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+    } else {
+      toast.error(errorMessage);
+    }
+      
+    // Clear queue state
+    setQueueJobId(null);
+    setQueueStatus(null);
+    setQueuePosition(null);
+    setEstimatedTime(null);
+  }, []);
 
-              toast.success(
-                <div className="flex items-center space-x-2">
-                  <CheckCircle className="w-5 h-5 text-green-500" />
-                  <div>
-                    <p className="font-medium">Claim Completed!</p>
-                    <p className="text-sm text-gray-600">
-                      {tokenSymbol} tokens sent to your wallet
-                    </p>
-                    <p className="text-xs text-gray-500 font-mono">
-                      TX: {data.transactionHash.slice(0, 10)}...
-                    </p>
-                  </div>
-                </div>,
-                { duration: 5000 }
-              );
-            }
-            
-            // Clear queue state and set cooldown
-            setQueueJobId(null);
-            setQueueStatus(null);
-            setQueuePosition(null);
-            setEstimatedTime(null);
-            setCooldownTime(actualCooldownPeriod);
-          } else if (data.status === 'failed') {
-            const errorMessage = data.error || 'Transaction failed';
-            
-            // Check if error is due to cooldown and extract time
-            const cooldownMatch = errorMessage.match(/Try again in (\d+) minutes/);
-            if (cooldownMatch) {
-              const cooldownMinutes = parseInt(cooldownMatch[1]);
-              const cooldownSeconds = cooldownMinutes * 60;
-              setCooldownTime(cooldownSeconds);
-              
-              toast.error(
-                <div className="flex items-center space-x-2">
-                  <Clock className="w-5 h-5 text-orange-500" />
-                  <div>
-                    <p className="font-medium">Cooldown Active</p>
-                    <p className="text-sm text-gray-600">
-                      Please wait {cooldownMinutes} minutes before claiming again
-                    </p>
-                  </div>
-                </div>,
-                { duration: 5000 }
-              );
-            } else {
-              toast.error(errorMessage);
-            }
-            
-            setQueueJobId(null);
-            setQueueStatus(null);
-            setQueuePosition(null);
-            setEstimatedTime(null);
-          }
-        }
-      } catch (error) {
-        console.error('Error polling queue status:', error);
-      }
-    };
+  // Use smart polling hook for queue status (fallback only)
+  // Completely disable polling once we have a transaction hash
+  const shouldEnablePolling = queueJobId !== null && !pendingTxHash;
+  
+  const { status: polledStatus, position: polledPosition, estimatedTime: polledEstimatedTime } = useSmartQueuePolling({
+    jobId: queueJobId,
+    enabled: shouldEnablePolling,
+    onCompleted: handleQueueCompleted,
+    onFailed: handleQueueFailed
+  });
 
-    const interval = setInterval(() => {
-      // Only poll if page is visible to reduce unnecessary API calls
-      if (!document.hidden) {
-        pollStatus();
-      }
-    }, 5000); // Poll every 5 seconds instead of 2 seconds
-    return () => clearInterval(interval);
-  }, [queueJobId, queueStatus, selectedToken, tokens, address, addClaim, actualCooldownPeriod]);
+  // Update local state when polling hook provides new data
+  useEffect(() => {
+    if (polledStatus && ['pending', 'processing', 'completed', 'failed', 'retrying'].includes(polledStatus)) {
+      setQueueStatus(polledStatus as 'pending' | 'processing' | 'completed' | 'failed' | 'retrying');
+    }
+    if (polledPosition !== null) setQueuePosition(polledPosition);
+    if (polledEstimatedTime !== null) setEstimatedTime(polledEstimatedTime);
+  }, [polledStatus, polledPosition, polledEstimatedTime]);
 
   // Fetch actual cooldown period from API
   useEffect(() => {
@@ -200,6 +248,16 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
 
     fetchTokens();
   }, []);
+
+  // Additional safeguard: Clear queue state whenever pendingTxHash is set
+  useEffect(() => {
+    if (pendingTxHash) {
+      setQueueJobId(null);
+      setQueueStatus(null);
+      setQueuePosition(null);
+      setEstimatedTime(null);
+    }
+  }, [pendingTxHash]);
 
   // Cooldown timer
   useEffect(() => {
@@ -291,45 +349,32 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
             </div>,
             { duration: 4000 }
           );
-        } else {
-          // Direct transaction response (fallback mode)
-          const tokenSymbol = selectedToken === 'ETH' ? 'ETH' : tokens[selectedToken]?.symbol || selectedToken;
-          const tokenAddress = selectedToken === 'ETH' ? '0x0000000000000000000000000000000000000000' : tokens[selectedToken]?.address;
-          const amount = selectedToken === 'ETH' ? '0.1' : tokens[selectedToken]?.amount || '0';
+        } else if (result.transactionHash) {
+          // Direct transaction response (fallback mode) - use blockchain confirmation
+          setPendingTxHash(result.transactionHash);
+          setIsWaitingForConfirmation(true);
           
-          // Add claim to in-memory storage for instant display
-          if (address && result.transactionHash) {
-            addClaim({
-              txHash: result.transactionHash,
-              blockNumber: result.blockNumber || 0, // Will be updated when available
-              token: tokenSymbol,
-              tokenAddress: tokenAddress || '',
-              amount: amount,
-              formattedAmount: `${amount} ${tokenSymbol}`,
-              userAddress: address,
-            });
-          }
+          // Clear all queue state immediately to stop any polling
+          setQueueJobId(null);
+          setQueueStatus(null);
+          setQueuePosition(null);
+          setEstimatedTime(null);
           
           toast.success(
             <div className="flex items-center space-x-2">
-              <CheckCircle className="w-5 h-5 text-green-500" />
+              <Clock className="w-5 h-5 text-blue-500" />
               <div>
-                <p className="font-medium">Claim Successful!</p>
+                <p className="font-medium">Transaction Submitted!</p>
                 <p className="text-sm text-gray-600">
-                  {tokenSymbol} tokens sent to your wallet
+                  Waiting for blockchain confirmation...
                 </p>
-                {result.transactionHash && (
-                  <p className="text-xs text-gray-500 font-mono">
-                    TX: {result.transactionHash.slice(0, 10)}...
-                  </p>
-                )}
+                <p className="text-xs text-gray-500 font-mono">
+                  TX: {result.transactionHash.slice(0, 10)}...
+                </p>
               </div>
             </div>,
-            { duration: 5000 }
+            { duration: 4000 }
           );
-          
-          // Set cooldown using actual period
-          setCooldownTime(actualCooldownPeriod);
         }
       } else {
         if (result.retryAfter) {
@@ -586,19 +631,25 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
         </div>
       )}
 
-      {/* Queue Status */}
-      {queueJobId && queueStatus && (
+      {/* Queue Status and Blockchain Confirmation */}
+      {(queueJobId && queueStatus) || isWaitingForConfirmation ? (
         <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
                {queueStatus === 'pending' && <Clock className="w-5 h-5 text-blue-600 dark:text-blue-400" />}
                {queueStatus === 'processing' && <RefreshCw className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />}
                {queueStatus === 'retrying' && <AlertCircle className="w-5 h-5 text-orange-600 dark:text-orange-400" />}
+               {isWaitingForConfirmation && <RefreshCw className="w-5 h-5 text-blue-600 dark:text-blue-400 animate-spin" />}
                <div>
                  <p className="text-blue-800 dark:text-blue-200 font-medium">
                    {queueStatus === 'pending' && 'Transaction Queued'}
                    {queueStatus === 'processing' && 'Processing Transaction'}
                    {queueStatus === 'retrying' && 'Retrying Transaction'}
+                   {isWaitingForConfirmation && (
+                     currentConfirmations > 0 
+                       ? `Confirming Transaction (${currentConfirmations}/1)`
+                       : 'Waiting for Blockchain Confirmation'
+                   )}
                  </p>
                 {queuePosition !== null && queueStatus === 'pending' && (
                   <p className="text-sm text-blue-600 dark:text-blue-300">
@@ -609,6 +660,21 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
                   <p className="text-xs text-blue-500 dark:text-blue-400">
                     Estimated time: {Math.ceil(estimatedTime / 1000)} seconds
                   </p>
+                )}
+                {isWaitingForConfirmation && pendingTxHash && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-blue-500 dark:text-blue-400 font-mono">
+                      TX: {pendingTxHash.slice(0, 10)}...
+                    </p>
+                    <a
+                      href={`https://sepolia.etherscan.io/tx/${pendingTxHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline"
+                    >
+                      View on Etherscan →
+                    </a>
+                  </div>
                 )}
               </div>
             </div>
@@ -640,7 +706,7 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
             )}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Cooldown Timer */}
       {cooldownTime > 0 && (
@@ -659,9 +725,9 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
       {/* Claim Button */}
       <button
         onClick={handleClaim}
-        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId}
+        disabled={!isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId || isWaitingForConfirmation}
         className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-200 ${
-          !isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId
+          !isClient || !isConnected || isClaiming || cooldownTime > 0 || !hasMinBalance || !!queueJobId || isWaitingForConfirmation
             ? 'bg-gray-400 cursor-not-allowed'
             : 'bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transform hover:scale-[1.02] active:scale-[0.98]'
         }`}
@@ -685,6 +751,11 @@ export default function FaucetCard({ className = '' }: FaucetCardProps) {
           <div className="flex items-center justify-center space-x-2">
             <AlertCircle className="w-5 h-5" />
             <span>Retrying...</span>
+          </div>
+        ) : isWaitingForConfirmation ? (
+          <div className="flex items-center justify-center space-x-2">
+            <RefreshCw className="w-5 h-5 animate-spin" />
+            <span>Confirming...</span>
           </div>
         ) : cooldownTime > 0 ? (
           `Wait ${formatTime(cooldownTime)}`
