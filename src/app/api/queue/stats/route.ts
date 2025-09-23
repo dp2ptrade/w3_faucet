@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 import { transactionQueue, QueueJob } from '@/lib/queue';
 import { verifyToken } from '@/lib/auth';
 
@@ -13,8 +12,7 @@ export async function GET(request: NextRequest) {
     
     // For admin requests, verify authentication
     if (isAdmin) {
-      const headersList = headers();
-      const authHeader = headersList.get('authorization');
+      const authHeader = request.headers.get('authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return NextResponse.json(
           {
